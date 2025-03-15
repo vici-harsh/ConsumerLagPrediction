@@ -9,10 +9,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.ResponseEntity;
 import javax.servlet.http.HttpSession;
+import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -22,16 +26,17 @@ public class AdapterController {
     private KafkaTemplate<String, Object> kafkaTemplate;
 
     private Map<String, CompletableFuture<String>> responseMap = new HashMap<>();
-
-
+    private static final Logger logger = LoggerFactory.getLogger(AdapterController.class);
     // Endpoint to create an account
     @PostMapping("/createAccount")
-    public ResponseEntity<String> createAccount(@RequestBody Map<String, String> accountRequest, HttpSession session) {
+    public ResponseEntity<String> createAccount(@Valid @RequestBody AccountRequest accountRequest, HttpSession session) {
         String correlationId = UUID.randomUUID().toString();
+
+        logger.info("Received create account request with correlationId: {}", correlationId);
         session.setAttribute("correlationId", correlationId);
 
         // Add correlation ID to the request
-        accountRequest.put("correlationId", correlationId);
+        accountRequest.setCorrelationId(correlationId);
 
         // Send request to Kafka
         kafkaTemplate.send("create-account-topic", correlationId, accountRequest);
@@ -50,76 +55,24 @@ public class AdapterController {
         }
     }
 
-    // Endpoint to fetch account details
-    @PostMapping("/fetchDetail")
-    public ResponseEntity<String> fetchDetail(@RequestBody Map<String, String> fetchRequest, HttpSession session) {
-        String correlationId = UUID.randomUUID().toString();
-        session.setAttribute("correlationId", correlationId);
-
-        // Add correlation ID to the request
-        fetchRequest.put("correlationId", correlationId);
-
-        // Send request to Kafka
-        kafkaTemplate.send("fetch-detail-topic", correlationId, fetchRequest);
-
-        // Wait for response from Kafka
-        CompletableFuture<String> responseFuture = new CompletableFuture<>();
-        responseMap.put(correlationId, responseFuture);
-
-        try {
-            String response = responseFuture.get(); // Block until response is received
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body("Error fetching account details: " + e.getMessage());
-        } finally {
-            responseMap.remove(correlationId);
-        }
-    }
 
     // Kafka listener for responses
     @KafkaListener(topics = "create-account-response-topic")
-    public void listenCreateAccountResponse(String correlationId, String response) {
-        CompletableFuture<String> responseFuture = responseMap.get(correlationId);
+    public void listenCreateAccountResponse(String correlationId, Map<String, Object> responseMap) {
+        CompletableFuture<String> responseFuture = this.responseMap.get(correlationId);
+        logger.info("Received Kafka response for correlationId: {}", correlationId);
         if (responseFuture != null) {
-            responseFuture.complete(response); // Complete the future with the response
+            try {
+                String status = (String) responseMap.get("status");
+                if (status != null) {
+                    responseFuture.complete(status);
+                } else {
+                    responseFuture.complete("error: status not found in response");
+                }
+            } catch (Exception e) {
+                responseFuture.complete("error: invalid response format");
+            }
         }
     }
 
-    @KafkaListener(topics = "fetch-detail-response-topic")
-    public void listenFetchDetailResponse(String correlationId, String response) {
-        CompletableFuture<String> responseFuture = responseMap.get(correlationId);
-        if (responseFuture != null) {
-            responseFuture.complete(response); // Complete the future with the response
-        }
-    }
-
-    @PostMapping("/request")
-    public ResponseEntity<String> handleRequest(@RequestBody String requestBody, HttpSession session) {
-        String correlationId = UUID.randomUUID().toString();
-        session.setAttribute("correlationId", correlationId);
-
-        // Send request to Kafka
-        kafkaTemplate.send("request-topic", correlationId, requestBody);
-
-        // Wait for response from Kafka
-        CompletableFuture<String> responseFuture = new CompletableFuture<>();
-        responseMap.put(correlationId, responseFuture);
-
-        try {
-            String response = responseFuture.get(); // Block until response is received
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body("Error processing request");
-        } finally {
-            responseMap.remove(correlationId);
-        }
-    }
-
-    @KafkaListener(topics = "response-topic")
-    public void listenResponse(String correlationId, String response) {
-        CompletableFuture<String> responseFuture = responseMap.get(correlationId);
-        if (responseFuture != null) {
-            responseFuture.complete(response); // Complete the future with the response
-        }
-    }
 }
