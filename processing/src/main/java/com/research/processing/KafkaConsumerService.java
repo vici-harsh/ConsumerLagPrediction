@@ -1,4 +1,4 @@
-package src.main.java.com.research.processing;
+package com.research.processing;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +16,7 @@ public class KafkaConsumerService {
     private static final Logger logger = LoggerFactory.getLogger(KafkaConsumerService.class);
 
     @Autowired
-    private RedisService redisService;
+    private com.research.processing.RedisService redisService;
 
     @Autowired
     private KafkaTemplate<String, Object> kafkaTemplate;

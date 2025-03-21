@@ -1,4 +1,4 @@
-package src.main.java.com.research.processing;
+package com.research.processing;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;

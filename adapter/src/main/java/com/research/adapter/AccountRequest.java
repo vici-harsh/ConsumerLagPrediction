@@ -2,7 +2,9 @@ package com.research.adapter;
 
 import jakarta.validation.constraints.NotBlank;
 
-public class AccountRequest {
+import java.io.Serializable;
+
+public class AccountRequest implements Serializable {
 
     @NotBlank(message = "Username is required")
     private String username;
