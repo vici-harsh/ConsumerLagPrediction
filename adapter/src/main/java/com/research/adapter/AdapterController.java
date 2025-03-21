@@ -17,7 +17,6 @@ import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 @RestController
 @RequestMapping("/api/accounts")
 public class AdapterController {
@@ -27,13 +26,13 @@ public class AdapterController {
 
     private Map<String, CompletableFuture<String>> responseMap = new HashMap<>();
     private static final Logger logger = LoggerFactory.getLogger(AdapterController.class);
+
     // Endpoint to create an account
     @PostMapping("/createAccount")
-    public ResponseEntity<String> createAccount(@Valid @RequestBody AccountRequest accountRequest, HttpSession session) {
+    public ResponseEntity<String> createAccount(@Valid @RequestBody AccountRequest accountRequest) {
         String correlationId = UUID.randomUUID().toString();
 
         logger.info("Received create account request with correlationId: {}", correlationId);
-        session.setAttribute("correlationId", correlationId);
 
         // Add correlation ID to the request
         accountRequest.setCorrelationId(correlationId);
@@ -55,7 +54,6 @@ public class AdapterController {
         }
     }
 
-
     // Kafka listener for responses
     @KafkaListener(topics = "create-account-response-topic")
     public void listenCreateAccountResponse(String correlationId, Map<String, Object> responseMap) {
@@ -74,5 +72,4 @@ public class AdapterController {
             }
         }
     }
-
 }
