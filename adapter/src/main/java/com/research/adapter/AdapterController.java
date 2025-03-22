@@ -8,15 +8,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.ResponseEntity;
-import javax.servlet.http.HttpSession;
 import jakarta.validation.Valid;
-import java.util.HashMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.util.concurrent.TimeUnit;
+
 @RestController
 @RequestMapping("/api/accounts")
 public class AdapterController {
@@ -24,52 +25,50 @@ public class AdapterController {
     @Autowired
     private KafkaTemplate<String, Object> kafkaTemplate;
 
-    private Map<String, CompletableFuture<String>> responseMap = new HashMap<>();
+    private Map<String, CompletableFuture<String>> responseMap = new ConcurrentHashMap<>();
     private static final Logger logger = LoggerFactory.getLogger(AdapterController.class);
 
-    // Endpoint to create an account
     @PostMapping("/createAccount")
     public ResponseEntity<String> createAccount(@Valid @RequestBody AccountRequest accountRequest) {
         String correlationId = UUID.randomUUID().toString();
-
         logger.info("Received create account request with correlationId: {}", correlationId);
 
-        // Add correlation ID to the request
         accountRequest.setCorrelationId(correlationId);
-
-        // Send request to Kafka
         kafkaTemplate.send("create-account-topic", correlationId, accountRequest);
+        logger.info("Sent request to Kafka with correlationId: {}", correlationId);
 
-        // Wait for response from Kafka
         CompletableFuture<String> responseFuture = new CompletableFuture<>();
         responseMap.put(correlationId, responseFuture);
 
         try {
-            String response = responseFuture.get(); // Block until response is received
+            String response = responseFuture.get(30, TimeUnit.SECONDS); // Timeout after 30 seconds
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            logger.error("Error while waiting for response: {}", e.getMessage(), e);
             return ResponseEntity.status(500).body("Error creating account: " + e.getMessage());
         } finally {
             responseMap.remove(correlationId);
         }
     }
 
-    // Kafka listener for responses
-    @KafkaListener(topics = "create-account-response-topic")
-    public void listenCreateAccountResponse(String correlationId, Map<String, Object> responseMap) {
-        CompletableFuture<String> responseFuture = this.responseMap.get(correlationId);
-        logger.info("Received Kafka response for correlationId: {}", correlationId);
-        if (responseFuture != null) {
-            try {
-                String status = (String) responseMap.get("status");
-                if (status != null) {
-                    responseFuture.complete(status);
-                } else {
-                    responseFuture.complete("error: status not found in response");
-                }
-            } catch (Exception e) {
-                responseFuture.complete("error: invalid response format");
+    @KafkaListener(topics = "create-account-response-topic", containerFactory = "accountResponseKafkaListenerContainerFactory")
+    public void listenCreateAccountResponse(ConsumerRecord<String, AccountResponse> record) {
+        try {
+            String correlationId = record.key();
+            AccountResponse response = record.value();
+            logger.info("Received Kafka response for correlationId: {}, Status: {}", correlationId, response.getStatus());
+
+            CompletableFuture<String> responseFuture = responseMap.get(correlationId);
+            if (responseFuture != null) {
+                responseFuture.complete(response.getStatus());
+            } else {
+                logger.warn("No pending request found for correlationId: {}", correlationId);
             }
+        } catch (ClassCastException e) {
+            logger.error("ClassCastException: Failed to deserialize AccountResponse. Check the consumer configuration.", e);
+        } catch (Exception e) {
+            logger.error("Unexpected error while processing Kafka response: ", e);
         }
     }
+
 }

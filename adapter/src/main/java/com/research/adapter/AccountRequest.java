@@ -6,6 +6,8 @@ import java.io.Serializable;
 
 public class AccountRequest implements Serializable {
 
+    public AccountRequest() {}
+
     @NotBlank(message = "Username is required")
     private String username;
 

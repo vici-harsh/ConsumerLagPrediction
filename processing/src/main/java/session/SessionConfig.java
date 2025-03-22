@@ -6,6 +6,7 @@ import org.springframework.session.MapSessionRepository;
 import org.springframework.session.config.annotation.web.http.EnableSpringHttpSession;
 import java.util.concurrent.ConcurrentHashMap;
 
+
 @Configuration
 @EnableSpringHttpSession
 public class SessionConfig {

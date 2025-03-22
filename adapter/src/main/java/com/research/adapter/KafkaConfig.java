@@ -34,7 +34,6 @@ public class KafkaConfig {
         template.setProducerListener(new ProducerListener<String, Object>() {
             @Override
             public void onError(ProducerRecord<String, Object> record, RecordMetadata recordMetadata, Exception exception) {
-                // Log the error or handle it accordingly
                 System.err.println("Error sending message: " + exception.getMessage());
                 System.err.println("Failed record: " + record);
             }
@@ -50,7 +49,6 @@ public class KafkaConfig {
         config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
 
-        // Configure JsonDeserializer
         JsonDeserializer<AccountRequest> deserializer = new JsonDeserializer<>(AccountRequest.class);
         deserializer.setRemoveTypeHeaders(false);
         deserializer.addTrustedPackages("com.research.adapter");
@@ -66,4 +64,25 @@ public class KafkaConfig {
         return factory;
     }
 
+    @Bean
+    public ConsumerFactory<String, AccountResponse> accountResponseConsumerFactory() {
+        Map<String, Object> config = new HashMap<>();
+        config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        config.put(ConsumerConfig.GROUP_ID_CONFIG, "adapter-service-group");
+        config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
+
+        JsonDeserializer<AccountResponse> deserializer = new JsonDeserializer<>(AccountResponse.class, false);
+        deserializer.addTrustedPackages("com.research.adapter");
+        deserializer.setUseTypeMapperForKey(false); // Since keys are simple Strings
+
+        return new DefaultKafkaConsumerFactory<>(config, new StringDeserializer(), deserializer);
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, AccountResponse> accountResponseKafkaListenerContainerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, AccountResponse> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(accountResponseConsumerFactory());
+        return factory;
+    }
 }
