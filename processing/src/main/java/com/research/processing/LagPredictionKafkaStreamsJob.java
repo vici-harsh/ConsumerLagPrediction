@@ -15,6 +15,9 @@ public class LagPredictionKafkaStreamsJob {
     // Initialize the LSTM model with the model path
     private static LSTMModel lstmModel = new LSTMModel("processing/src/main/resources/models/lstm_model.h5");
 
+    // Define a threshold for predicted lag (e.g., 1000 ms)
+    private static final long THRESHOLD = 1000;
+
     public static void main(String[] args) {
         // Kafka Streams configuration
         Properties props = new Properties();
@@ -40,8 +43,8 @@ public class LagPredictionKafkaStreamsJob {
             // Train the model with the new data
             lstmModel.train(lagSequence, lag);
 
-            // Return the predicted lag as a string
-            return "Predicted Lag: " + predictedLag + " ms";
+            // Include timestamp in the predicted lag value
+            return String.format("%d,%d", currentTime, predictedLag);
         }).to("processed-topic", Produced.with(Serdes.String(), Serdes.String()));
 
         // Start the Kafka Streams application
@@ -51,10 +54,17 @@ public class LagPredictionKafkaStreamsJob {
         // Add shutdown hook to gracefully close the application
         Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
 
-        // Redis integration (optional: write predicted lag to Redis)
+        // Redis integration (store predicted lag in Redis)
         Jedis jedis = new Jedis("localhost", 6379);
         sourceStream.foreach((key, value) -> {
-            jedis.set(key, value); // Store predicted lag in Redis
+            String redisKey = "predicted_lag:" + System.currentTimeMillis();
+            jedis.set(redisKey, value); // Store predicted lag in Redis
+
+            // Trigger alerts if the predicted lag exceeds the threshold
+            long predictedLag = Long.parseLong(value.split(",")[1]);
+            if (predictedLag > THRESHOLD) {
+                SlackNotifier.sendAlert("Predicted Lag Alert: " + predictedLag + " ms");
+            }
         });
 
         // Periodically save the model (e.g., every 1000 records)

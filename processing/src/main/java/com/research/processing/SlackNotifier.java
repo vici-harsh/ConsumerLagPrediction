@@ -1,26 +1,26 @@
 package com.research.processing;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
 
 public class SlackNotifier {
     private static final String SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/your/webhook/url";
 
     public static void sendAlert(String message) {
-        String payload = String.format("{\"text\":\"%s\"}", message);
+        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+            HttpPost httpPost = new HttpPost(SLACK_WEBHOOK_URL);
+            String payload = String.format("{\"text\":\"%s\"}", message);
 
-        HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(SLACK_WEBHOOK_URL))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload))
-                .build();
+            // Set headers and payload
+            httpPost.setHeader("Content-Type", "application/json");
+            httpPost.setEntity(new StringEntity(payload));
 
-        try {
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            System.out.println("Slack alert sent: " + response.body());
+            // Send the request
+            HttpResponse response = httpClient.execute(httpPost);
+            System.out.println("Slack alert sent: " + response.getStatusLine().getStatusCode());
         } catch (Exception e) {
             e.printStackTrace();
         }
