@@ -8,6 +8,7 @@ import org.springframework.session.data.redis.config.annotation.web.http.EnableR
 @EnableRedisHttpSession
 public class ProcessingApplication {
     public static void main(String[] args) {
+        System.out.println("Starting ProcessingApplication...");
         SpringApplication.run(ProcessingApplication.class, args);
     }
 }

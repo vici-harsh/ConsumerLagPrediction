@@ -25,9 +25,19 @@ public class OnlineLearningKafkaStreamsJob {
 
         sourceStream.mapValues(record -> {
             // Extract timestamp and calculate lag
-            long messageTimestamp = Long.parseLong(record.split(",")[0]); // Example: "timestamp,data"
+            String[] parts = record.split(",");
+            if (parts.length < 2) {
+                System.err.println("Invalid message format: " + record);
+                return "Invalid message format";
+            }
+
+            long messageTimestamp = Long.parseLong(parts[0]); // Example: "timestamp,data"
             long currentTime = System.currentTimeMillis();
             long lag = currentTime - messageTimestamp;
+
+            System.out.println("Message Timestamp: " + messageTimestamp);
+            System.out.println("Current Time: " + currentTime);
+            System.out.println("Calculated Lag: " + lag + " ms");
 
             // Train the model with the new data point
             model.train(lag);

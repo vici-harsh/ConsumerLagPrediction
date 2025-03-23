@@ -1,5 +1,6 @@
 package com.research.processing.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.research.adapter.AccountRequest;
 import com.research.processing.LSTMModel;
 import com.research.processing.ModelPersistence;
@@ -74,6 +75,8 @@ public class KafkaConfig {
     // Kafka Streams Configuration
     @Bean
     public KafkaStreams kafkaStreams() {
+        System.out.println("Initializing Kafka Streams job...");
+
         // Kafka Streams configuration
         Properties props = new Properties();
         props.put("bootstrap.servers", "localhost:9092");
@@ -86,36 +89,52 @@ public class KafkaConfig {
         // Initialize the LSTM model
         LSTMModel lstmModel = new LSTMModel("processing/src/main/resources/models/lstm_model.h5");
 
+        // ObjectMapper for JSON parsing
+        ObjectMapper objectMapper = new ObjectMapper();
+
         sourceStream.mapValues(record -> {
-            // Extract timestamp and calculate lag
-            long messageTimestamp = Long.parseLong(record.split(",")[0]); // Example: "timestamp,data"
-            long currentTime = System.currentTimeMillis();
-            long lag = currentTime - messageTimestamp;
+            try {
+                // Parse the JSON message
+                AccountRequest accountRequest = objectMapper.readValue(record, AccountRequest.class);
 
-            // Prepare input sequence for the LSTM model (e.g., last 3 lag values)
-            long[] lagSequence = {lag - 100, lag - 50, lag};
+                // Extract timestamp and calculate lag
+                long messageTimestamp = System.currentTimeMillis(); // Use current time as timestamp
+                long currentTime = System.currentTimeMillis();
+                long lag = currentTime - messageTimestamp;
 
-            // Check if the model is trained
-            if (lstmModel.isModelLoaded()) {
-                // Predict lag using the LSTM model
-                long predictedLag = lstmModel.predictLag(lagSequence);
-                System.out.println("Predicted lag: " + predictedLag + " ms");
+                // Prepare input sequence for the LSTM model (e.g., last 3 lag values)
+                long[] lagSequence = {
+                        Math.max(0, lag - 100),  // Ensure the value is not negative
+                        Math.max(0, lag - 50),   // Ensure the value is not negative
+                        Math.max(0, lag)         // Ensure the value is not negative
+                };
 
-                // Train the model with the new data
-                System.out.println("Training model with lag sequence: " + Arrays.toString(lagSequence) + ", actual lag: " + lag);
-                lstmModel.train(lagSequence, lag);
-            } else {
-                // Train the model with the new data (initial training)
-                System.out.println("Initial training with lag sequence: " + Arrays.toString(lagSequence) + ", actual lag: " + lag);
-                lstmModel.train(lagSequence, lag);
+                // Check if the model is trained
+                if (lstmModel.isModelLoaded()) {
+                    // Predict lag using the LSTM model
+                    long predictedLag = lstmModel.predictLag(lagSequence);
+                    System.out.println("Predicted lag: " + predictedLag + " ms");
 
-                // Save the model after initial training
-                ModelPersistence.saveModel(lstmModel, "processing/src/main/resources/models/lstm_model_updated.h5");
-                System.out.println("Model saved to: processing/src/main/resources/models/lstm_model_updated.h5");
+                    // Train the model with the new data
+                    System.out.println("Training model with lag sequence: " + Arrays.toString(lagSequence) + ", actual lag: " + lag);
+                    lstmModel.train(lagSequence, lag);
+                } else {
+                    // Train the model with the new data (initial training)
+                    System.out.println("Initial training with lag sequence: " + Arrays.toString(lagSequence) + ", actual lag: " + lag);
+                    lstmModel.train(lagSequence, lag);
+
+                    // Save the model after initial training
+                    ModelPersistence.saveModel(lstmModel, "processing/src/main/resources/models/lstm_model_updated.h5");
+                    System.out.println("Model saved to: processing/src/main/resources/models/lstm_model_updated.h5");
+                }
+
+                // Include timestamp in the predicted lag value
+                return String.format("%d,%d", currentTime, lag);
+            } catch (Exception e) {
+                System.err.println("Error processing Kafka message: " + e.getMessage());
+                e.printStackTrace();
+                return null; // Skip invalid messages
             }
-
-            // Include timestamp in the predicted lag value
-            return String.format("%d,%d", currentTime, lag);
         }).to("processed-topic", Produced.with(Serdes.String(), Serdes.String()));
 
         // Build the Kafka Streams application
