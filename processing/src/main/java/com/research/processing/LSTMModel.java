@@ -1,13 +1,23 @@
 package com.research.processing;
 
+import org.deeplearning4j.nn.conf.layers.DenseLayer;
 import org.deeplearning4j.nn.modelimport.keras.KerasModelImport;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
 import org.deeplearning4j.util.ModelSerializer;
+import org.deeplearning4j.nn.conf.MultiLayerConfiguration;
+import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
+import org.deeplearning4j.nn.conf.layers.DenseLayer;
+import org.deeplearning4j.nn.conf.layers.OutputLayer;
+import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
+import org.deeplearning4j.nn.weights.WeightInit;
+import org.nd4j.linalg.activations.Activation;
+import org.nd4j.linalg.lossfunctions.LossFunctions;
 
 import java.io.File;
 import java.io.IOException;
+
 
 public class LSTMModel {
     private MultiLayerNetwork model;
@@ -26,12 +36,40 @@ public class LSTMModel {
                 model = KerasModelImport.importKerasSequentialModelAndWeights(modelPath);
                 System.out.println("Model loaded successfully from: " + modelPath);
             } else {
-                throw new IOException("Model file not found at: " + modelPath);
+                System.out.println("Model file not found at: " + modelPath + ". Initializing new model.");
+                initializeModel();
             }
         } catch (Exception e) {
             System.err.println("Failed to load model: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    // Initialize a new model
+    private void initializeModel() {
+        MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder()
+                .weightInit(WeightInit.XAVIER)
+                .list()
+                .layer(0, new DenseLayer.Builder()
+                        .nIn(3) // Input size (e.g., lag sequence length)
+                        .nOut(10) // Number of neurons in the hidden layer
+                        .activation(Activation.RELU)
+                        .build())
+                .layer(1, new OutputLayer.Builder(LossFunctions.LossFunction.MSE)
+                        .nIn(10) // Input size from the previous layer
+                        .nOut(1) // Output size (e.g., predicted lag)
+                        .activation(Activation.IDENTITY)
+                        .build())
+                .build();
+
+        model = new MultiLayerNetwork(conf);
+        model.init();
+        System.out.println("New model initialized.");
+    }
+
+    // Check if the model is loaded
+    public boolean isModelLoaded() {
+        return model != null;
     }
 
     // Predict lag using the LSTM model
