@@ -137,7 +137,7 @@ public class LagPredictionService {
             long predictedLag = predictLag(lag);
             storeInRedis(correlationId, lag, predictedLag);
             handleModelTraining(lag);
-            checkForAlerts(lag);
+            checkForAlerts(predictedLag);
 
             String result = formatOutput(correlationId, currentTime, lag, predictedLag);
             logger.info("Processing completed in {}ms - Result: {}",
