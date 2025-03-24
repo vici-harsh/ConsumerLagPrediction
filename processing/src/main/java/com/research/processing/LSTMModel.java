@@ -1,120 +1,143 @@
 package com.research.processing;
 
 import org.deeplearning4j.nn.conf.layers.LSTM;
-import org.deeplearning4j.nn.conf.layers.RnnOutputLayer;
-import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
-import org.deeplearning4j.nn.weights.WeightInit;
+import org.deeplearning4j.nn.conf.layers.RnnOutputLayer;
+import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
+import org.deeplearning4j.util.ModelSerializer;
 import org.nd4j.linalg.activations.Activation;
-import org.nd4j.linalg.lossfunctions.LossFunctions;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
-import org.deeplearning4j.util.ModelSerializer;
+import org.nd4j.linalg.learning.config.Adam;
+import org.nd4j.linalg.lossfunctions.LossFunctions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 
 public class LSTMModel {
     private MultiLayerNetwork model;
-    private String modelPath;
-    private int trainingCount = 0; // Track the number of training iterations
+    private final String modelPath;
+    private static final Logger logger = LoggerFactory.getLogger(LSTMModel.class);
 
     public LSTMModel(String modelPath) {
         this.modelPath = modelPath;
-        loadModel();
+        initializeModel();
     }
 
-    // Load the pre-trained LSTM model
-    private void loadModel() {
+    public boolean isModelLoaded() {
+        return model != null;
+    }
+
+    private void initializeModel() {
         try {
-            if (new File(modelPath).exists()) {
+            File modelFile = new File(modelPath);
+            if (modelFile.exists()) {
+                logger.info("Loading existing model from {}", modelPath);
                 model = ModelSerializer.restoreMultiLayerNetwork(modelPath);
-                System.out.println("Model loaded successfully from: " + modelPath);
             } else {
-                System.out.println("Model file not found at: " + modelPath + ". Initializing new model.");
-                initializeModel();
+                logger.warn("Model file not found. Building new model.");
+                buildNewModel();
+                modelFile.getParentFile().mkdirs(); // Ensure directory exists
+                saveModel();
             }
-        } catch (Exception e) {
-            System.err.println("Failed to load model: " + e.getMessage());
-            e.printStackTrace();
+        } catch (IOException e) {
+            logger.error("Model initialization failed", e);
+            throw new RuntimeException("Failed to initialize model", e);
         }
     }
 
-    // Initialize a new LSTM model
-    private void initializeModel() {
+    private void buildNewModel() {
         MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder()
-                .weightInit(WeightInit.XAVIER)
+                .updater(new Adam(0.0001)) // Adjusted learning rate
                 .list()
-                .layer(0, new LSTM.Builder()
-                        .nIn(3) // Input size (e.g., lag sequence length)
-                        .nOut(10) // Number of LSTM units
+                .layer(new LSTM.Builder()
+                        .nIn(3)
+                        .nOut(100) // Increased number of LSTM units
                         .activation(Activation.TANH)
+                        .dropOut(0.5) // Added dropout
                         .build())
-                .layer(1, new RnnOutputLayer.Builder(LossFunctions.LossFunction.MSE)
-                        .nIn(10) // Input size from the previous LSTM layer
-                        .nOut(1) // Output size (e.g., predicted lag)
+                .layer(new LSTM.Builder()
+                        .nIn(100)
+                        .nOut(50)
+                        .activation(Activation.TANH)
+                        .dropOut(0.5) // Added dropout
+                        .build())
+                .layer(new RnnOutputLayer.Builder()
+                        .nIn(50)
+                        .nOut(1)
+                        .lossFunction(LossFunctions.LossFunction.MSE)
                         .activation(Activation.IDENTITY)
                         .build())
                 .build();
 
         model = new MultiLayerNetwork(conf);
         model.init();
-        System.out.println("New LSTM model initialized.");
+        logger.info("New LSTM model initialized with configuration: {}", conf.toJson());
     }
 
-    // Check if the model is loaded
-    public boolean isModelLoaded() {
-        return model != null;
-    }
+    public long predict(long[] sequence) {
 
-    // Predict lag using the LSTM model
-    public long predictLag(long[] lagSequence) {
-        if (model == null) {
-            throw new IllegalStateException("Model is not loaded.");
-        }
 
-        // Convert the lag sequence to an INDArray (input for the model)
-        INDArray input = Nd4j.create(new float[][]{
-                {lagSequence[0], lagSequence[1], lagSequence[2]}
-        }).reshape(1, 3, 1); // Shape: (batchSize, sequenceLength, numFeatures)
-
-        INDArray output = model.output(input);
-
-        // Return the predicted lag (assuming the output is a single value)
-        return (long) output.getDouble(0);
-    }
-
-    // Train the model with new data (online learning)
-    public void train(long[] lagSequence, long actualLag) {
-        if (model == null) {
-            throw new IllegalStateException("Model is not loaded.");
-        }
-
-        // Convert the lag sequence and actual lag to INDArrays
-        INDArray input = Nd4j.create(new float[][]{
-                {lagSequence[0], lagSequence[1], lagSequence[2]}
-        }).reshape(1, 3, 1); // Shape: (batchSize, sequenceLength, numFeatures)
-
-        INDArray label = Nd4j.create(new float[]{actualLag}).reshape(1, 1, 1); // Shape: (batchSize, outputSize, 1)
-
-        // Train the model with the new data
-        model.fit(input, label);
-        trainingCount++; // Increment training count
-    }
-
-    public int getTrainingCount() {
-        return trainingCount;
-    }
-
-    // Save the updated model to disk
-    public void saveModel(String savePath) {
+        logger.info("Starting prediction for input: {}", Arrays.toString(sequence));
         try {
-            ModelSerializer.writeModel(model, savePath, true);
-            System.out.println("Model saved successfully to: " + savePath);
-        } catch (IOException e) {
-            System.err.println("Failed to save model: " + e.getMessage());
-            e.printStackTrace();
+            // Normalize the input sequence
+            double[] normalizedSequence = normalizeSequence(sequence);
+            logger.info("Normalized sequence: {}", Arrays.toString(normalizedSequence));
+
+            // Convert sequence to INDArray and reshape to (1, 3, 1)
+            INDArray input = Nd4j.create(normalizedSequence).reshape(1, 3, 1); // Shape: (batchSize, sequenceLength, numFeatures)
+            logger.info("Input shape: {}", Arrays.toString(input.shape()));
+
+            INDArray output = model.output(input);
+            long result = (long) output.getDouble(0);
+            logger.info("Prediction result: {}", result);
+            return result;
+        } catch (Exception e) {
+            logger.error("Prediction failed", e);
+            throw new RuntimeException("Prediction failed", e);
         }
     }
+
+    public void train(long[] sequence, long actual) {
+        logger.info("Starting training for input: {} with label: {}", Arrays.toString(sequence), actual);
+        try {
+            // Normalize the input sequence
+            double[] normalizedSequence = normalizeSequence(sequence);
+            logger.info("Normalized sequence: {}", Arrays.toString(normalizedSequence));
+
+            // Convert sequence to INDArray and reshape to (1, 3, 1)
+            INDArray input = Nd4j.create(normalizedSequence).reshape(1, 3, 1); // Shape: (batchSize, sequenceLength, numFeatures)
+            INDArray label = Nd4j.create(new float[]{actual}).reshape(1, 1, 1); // Shape: (batchSize, outputSize, 1)
+
+            model.fit(input, label);
+            logger.info("Training completed successfully.");
+        } catch (Exception e) {
+            logger.error("Training failed", e);
+            throw new RuntimeException("Training failed", e);
+        }
+    }
+
+    public void saveModel() {
+        try {
+            ModelSerializer.writeModel(model, modelPath, true);
+            logger.info("Model saved successfully to {}", modelPath);
+        } catch (IOException e) {
+            logger.error("Failed to save model", e);
+            throw new RuntimeException("Failed to save model", e);
+        }
+    }
+
+    private double[] normalizeSequence(long[] sequence) {
+        double[] normalizedSequence = new double[sequence.length];
+        long max = Arrays.stream(sequence).max().getAsLong();
+        for (int i = 0; i < sequence.length; i++) {
+            normalizedSequence[i] = sequence[i] / (double) max; // Scale to [0, 1]
+        }
+        return normalizedSequence;
+    }
+
 }

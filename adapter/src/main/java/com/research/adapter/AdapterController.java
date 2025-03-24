@@ -1,5 +1,6 @@
 package com.research.adapter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -34,6 +35,7 @@ public class AdapterController {
         logger.info("Received create account request with correlationId: {}", correlationId);
 
         accountRequest.setCorrelationId(correlationId);
+        accountRequest.setTimestamp(System.currentTimeMillis());
         kafkaTemplate.send("create-account-topic", correlationId, accountRequest);
         logger.info("Sent request to Kafka with correlationId: {}", correlationId);
 
@@ -51,23 +53,30 @@ public class AdapterController {
         }
     }
 
-    @KafkaListener(topics = "create-account-response-topic", containerFactory = "accountResponseKafkaListenerContainerFactory")
-    public void listenCreateAccountResponse(ConsumerRecord<String, AccountResponse> record) {
+    @KafkaListener(topics = "create-account-response-topic", containerFactory = "kafkaListenerContainerFactory")
+    public void listenCreateAccountResponse(ConsumerRecord<String, String> record) {
         try {
-            String correlationId = record.key();
-            AccountResponse response = record.value();
-            logger.info("Received Kafka response for correlationId: {}, Status: {}", correlationId, response.getStatus());
+            String message = record.value();
 
-            CompletableFuture<String> responseFuture = responseMap.get(correlationId);
-            if (responseFuture != null) {
-                responseFuture.complete(response.getStatus());
+            if (isJson(message)) {
+                ObjectMapper objectMapper = new ObjectMapper();
+                AccountResponse response = objectMapper.readValue(message, AccountResponse.class);
+                logger.info("Received AccountResponse - CorrelationId: {}, Status: {}", response.getCorrelationId(), response.getStatus());
             } else {
-                logger.warn("No pending request found for correlationId: {}", correlationId);
+                logger.info("Received Non-JSON Message - {}", message);
             }
-        } catch (ClassCastException e) {
-            logger.error("ClassCastException: Failed to deserialize AccountResponse. Check the consumer configuration.", e);
         } catch (Exception e) {
-            logger.error("Unexpected error while processing Kafka response: ", e);
+            logger.error("Error during message processing: {}", e.getMessage(), e);
+        }
+    }
+
+    private boolean isJson(String message) {
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            objectMapper.readTree(message);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
