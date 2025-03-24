@@ -7,7 +7,7 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 
 public class SlackNotifier {
-    private static final String SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/your/webhook/url";
+    private static final String SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/lagmonitorapp/webhook/url";
 
     public static void sendAlert(String message) {
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
