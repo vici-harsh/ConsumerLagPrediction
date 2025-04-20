@@ -14,7 +14,6 @@ public class AccountRequest implements Serializable {
     @NotBlank(message = "Password is required")
     private String password;
 
-    @NotBlank(message = "Correlation ID is required")
     private String correlationId;
 
     private long timestamp;
