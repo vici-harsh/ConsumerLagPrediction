@@ -61,6 +61,26 @@
             <version>3.4.2</version>
             <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>com.research</groupId>
+            <artifactId>adapter</artifactId>
+            <version>1.0.0</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-streams</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.deeplearning4j</groupId>
+            <artifactId>deeplearning4j-nn</artifactId>
+            <version>1.0.0-M2.1</version>
+            <scope>compile</scope>
+        </dependency>
 
     </dependencies>
 </project>

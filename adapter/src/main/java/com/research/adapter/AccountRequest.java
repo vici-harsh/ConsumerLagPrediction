@@ -17,16 +17,14 @@ public class AccountRequest implements Serializable {
     @NotBlank(message = "Correlation ID is required")
     private String correlationId;
 
-    private long timestamp; // Add timestamp field
+    private long timestamp;
 
-    // Constructor
     public AccountRequest(String username, String password) {
         this.username = username;
         this.password = password;
         this.timestamp = System.currentTimeMillis(); // Initialize timestamp with current time
     }
 
-    // Getters and setters
     public String getUsername() {
         return username;
     }
@@ -51,12 +49,10 @@ public class AccountRequest implements Serializable {
         this.correlationId = correlationId;
     }
 
-    // Getter for timestamp
     public long getTimestamp() {
         return timestamp;
     }
 
-    // Setter for timestamp
     public void setTimestamp(long timestamp) {
         this.timestamp = timestamp;
     }

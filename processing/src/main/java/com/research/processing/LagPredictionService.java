@@ -41,10 +41,8 @@ public class LagPredictionService {
         this.jedisPool = jedisPool;
     }
 
-    @PostConstruct
-    public void start() {
-        logger.info("======== Starting LagPredictionService ========");
 
+    private void testRedisConnection() {
         // Enhanced Redis connection test
         try (Jedis jedis = jedisPool.getResource()) {
             String pingResponse = jedis.ping();
@@ -64,8 +62,10 @@ public class LagPredictionService {
             logger.error("Redis connection failed", e);
             throw new RuntimeException("Redis connection failed", e);
         }
+    }
 
-        // Enhanced Kafka Streams configuration
+
+    private static Properties getProperties() {
         Properties props = new Properties();
         props.put("bootstrap.servers", "localhost:9092");
         props.put("application.id", "lstm-lag-prediction-service");
@@ -76,10 +76,19 @@ public class LagPredictionService {
         props.put("retries", "3");
         props.put("metadata.max.age.ms", "30000");
         props.put("default.api.timeout.ms", "30000");
+        return props;
+    }
+
+    @PostConstruct
+    public void start() {
+        logger.info("======== Starting LagPredictionService ========");
+
+        testRedisConnection();
+
+        Properties props = getProperties();
 
         StreamsBuilder builder = new StreamsBuilder();
 
-        // Enhanced stream processing with better logging
         KStream<String, AccountRequest> stream = builder.stream(
                         "create-account-topic",
                         Consumed.with(Serdes.String(), new AccountRequestSerde())
@@ -99,13 +108,11 @@ public class LagPredictionService {
                 .mapValues(this::processRecord)
                 .filter((key, value) -> value != null && !value.contains("ERROR"));
 
-        // Send to both topics
         processedStream.to("create-account-response-topic", Produced.with(Serdes.String(), Serdes.String()));
         processedStream.to("lag-predictions", Produced.with(Serdes.String(), Serdes.String()));
 
         streams = new KafkaStreams(builder.build(), props);
 
-        // Enhanced exception handling
         streams.setUncaughtExceptionHandler(ex -> {
             logger.error("Kafka Streams error: {}", ex.getMessage(), ex);
             return StreamsUncaughtExceptionHandler.StreamThreadExceptionResponse.REPLACE_THREAD;
@@ -121,6 +128,7 @@ public class LagPredictionService {
         streams.start();
         logger.info("======== LagPredictionService Started Successfully ========");
     }
+
 
     private String processRecord(AccountRequest request) {
         long startTime = System.currentTimeMillis();

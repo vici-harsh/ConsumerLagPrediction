@@ -31,11 +31,13 @@ public class AdapterController {
 
     @PostMapping("/createAccount")
     public ResponseEntity<String> createAccount(@Valid @RequestBody AccountRequest accountRequest) {
+
         String correlationId = UUID.randomUUID().toString();
         logger.info("Received create account request with correlationId: {}", correlationId);
 
         accountRequest.setCorrelationId(correlationId);
         accountRequest.setTimestamp(System.currentTimeMillis());
+
         kafkaTemplate.send("create-account-topic", correlationId, accountRequest);
         logger.info("Sent request to Kafka with correlationId: {}", correlationId);
 
@@ -43,7 +45,7 @@ public class AdapterController {
         responseMap.put(correlationId, responseFuture);
 
         try {
-            String response = responseFuture.get(30, TimeUnit.SECONDS); // Timeout after 30 seconds
+            String response = responseFuture.get(30, TimeUnit.SECONDS);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             logger.error("Error while waiting for response: {}", e.getMessage(), e);
@@ -56,15 +58,25 @@ public class AdapterController {
     @KafkaListener(topics = "create-account-response-topic", containerFactory = "kafkaListenerContainerFactory")
     public void listenCreateAccountResponse(ConsumerRecord<String, String> record) {
         try {
+            String correlationId = record.key();
             String message = record.value();
 
-            if (isJson(message)) {
-                ObjectMapper objectMapper = new ObjectMapper();
-                AccountResponse response = objectMapper.readValue(message, AccountResponse.class);
-                logger.info("Received AccountResponse - CorrelationId: {}, Status: {}", response.getCorrelationId(), response.getStatus());
-            } else {
-                logger.info("Received Non-JSON Message - {}", message);
+            CompletableFuture<String> responseFuture = responseMap.get(correlationId);
+
+            if(responseFuture != null){
+                if (isJson(message)) {
+                    ObjectMapper objectMapper = new ObjectMapper();
+                    AccountResponse response = objectMapper.readValue(message, AccountResponse.class);
+                    logger.info("Received AccountResponse - CorrelationId: {}, Status: {}", correlationId, response.getStatus());
+                    responseFuture.complete(objectMapper.writeValueAsString(message));
+                } else {
+                    logger.info("Received Non-JSON Message - {}", message);
+                    responseFuture.complete(message);
+                }
+            }else {
+                logger.warn("Received response for unknown correlationId : {}", correlationId);
             }
+
         } catch (Exception e) {
             logger.error("Error during message processing: {}", e.getMessage(), e);
         }
@@ -79,5 +91,7 @@ public class AdapterController {
             return false;
         }
     }
+
+
 
 }
